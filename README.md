@@ -205,3 +205,51 @@ Perubahan utama dalam code ini adalah penggunaan match statement sebagai penggan
 Ketika dua browser dibuka secara bersamaan, dengan satu browser mengakses ```127.0.0.1:7878/sleep``` dan browser lainnya mengakses ```127.0.0.1:7878```, maka server menunjukkan keterbatasan. Ketika browser pertama mengakses path ```/sleep```, server memulai delay selama 10 detik. Selama waktu ini, jika browser kedua mencoba mengakses path root ("/"), browser kedua harus menunggu hingga request pertama selesai diproses sebelum mendapatkan respons.
 
 Hal ini terjadi karena server diimplementasikan sebagai aplikasi single-threaded. Di dalam loop ```for stream in listener.incoming()```, setiap koneksi masuk diproses satu per satu secara berurutan. Ketika sebuah koneksi sedang diproses (termasuk delay 10 detik), server tidak dapat melayani koneksi lain hingga pemrosesan koneksi saat ini selesai. Ini mengilustrasikan masalah concurrency yang umum dalam pengembangan server yaitu bagaimana menangani banyak koneksi secara bersamaan tanpa membuat pengguna menunggu satu sama lain.
+
+## Commit 5 Reflection
+
+src/lib.rs
+
+```
+pub struct ThreadPool;
+
+impl ThreadPool {
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+        ThreadPool
+    }
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+    }
+}
+```
+
+Pada src/lib.rs, dideklarasikan struktur ThreadPool sebagai empty struct. Di sini, ThreadPool memiliki dua fungsi utama yaitu new dan execute. Fungsi new menerima parameter size bertipe usize yang menentukan jumlah thread dalam pool. Saat ini, fungsi new hanya memastikan bahwa size lebih dari 0 melalui ```assert!(size > 0)``` dan mengembalikan instance ThreadPool kosong.
+
+Lalu untuk fungsi execute, fungsi ini menerima parameter generik F dengan batasan ```where F: FnOnce() + Send + 'static``` yang artinya F harus berupa closure yang dapat dipanggil sekali (FnOnce), aman ketika dikirim antar thread (Send), dan memiliki lifetime static ('static). Saat ini, metode ini hanya memanggil std::thread::spawn(f) untuk membuat thread baru setiap kali dipanggil.
+
+Perubahan code pada src/main.rs
+
+```
+...
+use hello::ThreadPool;
+
+
+fn main() {
+    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+    let pool = ThreadPool::new(4);
+
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+
+        pool.execute(|| {
+            handle_connection(stream);
+        });
+    }
+}
+...
+```
+
+Pada code di main.rs, web server membuat instance ThreadPool dengan parameter 4 yang mengindikasikan untuk membuat pool dengan 4 thread. Untuk setiap koneksi masuk, server memanggil pool.execute() dengan closure yang memanggil handle_connection(stream). Ini menunjukkan bahwa server sekarang menggunakan thread terpisah untuk menangani setiap koneksi sehingga memungkinkan penanganan beberapa koneksi secara bersamaan.
