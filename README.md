@@ -166,3 +166,42 @@ Setelah adanya refactoring, terjadi pengurangan duplikasi dan peningkatan keterb
 
 Kenapa refactoring diperlukan? Pertama, refactoring mengurangi duplikasi code yang merupakan prinsip dasar dalam pengembangan perangkat lunak yang baik. Code yang terduplikasi sulit untuk dipelihara karena perubahan harus dilakukan di beberapa tempat sehingga meningkatkan risiko kesalahan. Kedua, code yang di-refactor lebih mudah dibaca dan dipahami karena memisahkan dengan jelas bagian penentuan kondisi (if-else) dari bagian pelaksanaan respons. Ketiga, hal ini membuat code lebih modular sehingga jika ingin menambahkan lebih banyak rute atau jenis respons, struktur code yang di-refactor akan lebih mudah disesuaikan.
 
+## Commit 4 Reflection
+
+Terdapat perubahan pada code tersebut.
+
+```
+use std::{
+    ...
+    thread,
+    time::Duration,
+};
+
+fn handle_connection(mut stream: TcpStream) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+    let (status_line, filename) = match &request_line[..] {
+        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "hello.html"), 
+        "GET /sleep HTTP/1.1" => {
+            thread::sleep(Duration::from_secs(10)); 
+            ("HTTP/1.1 200 OK", "hello.html")
+        }
+        _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
+    };
+
+    let contents = fs::read_to_string(filename).unwrap();
+    let length = contents.len();
+
+    let response =
+        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    stream.write_all(response.as_bytes()).unwrap();
+}
+```
+
+Perubahan utama dalam code ini adalah penggunaan match statement sebagai pengganti if-else sebelumnya. Pattern matching di Rust memungkinkan ekspresi ```match &request_line[..]``` untuk membandingkan string request dengan pola-pola yang berbeda sehingga server kini memiliki tiga kemungkinan respons: halaman utama untuk ```GET / HTTP/1.1```, halaman yang sama tetapi dengan delay untuk ```GET /sleep HTTP/1.1```, dan halaman 404 untuk semua request lainnya.
+
+Ketika dua browser dibuka secara bersamaan, dengan satu browser mengakses ```127.0.0.1:7878/sleep``` dan browser lainnya mengakses ```127.0.0.1:7878```, maka server menunjukkan keterbatasan. Ketika browser pertama mengakses path ```/sleep```, server memulai delay selama 10 detik. Selama waktu ini, jika browser kedua mencoba mengakses path root ("/"), browser kedua harus menunggu hingga request pertama selesai diproses sebelum mendapatkan respons.
+
+Hal ini terjadi karena server diimplementasikan sebagai aplikasi single-threaded. Di dalam loop ```for stream in listener.incoming()```, setiap koneksi masuk diproses satu per satu secara berurutan. Ketika sebuah koneksi sedang diproses (termasuk delay 10 detik), server tidak dapat melayani koneksi lain hingga pemrosesan koneksi saat ini selesai. Ini mengilustrasikan masalah concurrency yang umum dalam pengembangan server yaitu bagaimana menangani banyak koneksi secara bersamaan tanpa membuat pengguna menunggu satu sama lain.
