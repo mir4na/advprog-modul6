@@ -228,7 +228,7 @@ impl ThreadPool {
 
 Pada src/lib.rs, dideklarasikan struktur ThreadPool sebagai empty struct. Di sini, ThreadPool memiliki dua fungsi utama yaitu new dan execute. Fungsi new menerima parameter size bertipe usize yang menentukan jumlah thread dalam pool. Saat ini, fungsi new hanya memastikan bahwa size lebih dari 0 melalui ```assert!(size > 0)``` dan mengembalikan instance ThreadPool kosong.
 
-Lalu untuk fungsi execute, fungsi ini menerima parameter generik F dengan batasan ```where F: FnOnce() + Send + 'static``` yang artinya F harus berupa closure yang dapat dipanggil sekali (FnOnce), aman ketika dikirim antar thread (Send), dan memiliki lifetime static ('static). Saat ini, metode ini hanya memanggil std::thread::spawn(f) untuk membuat thread baru setiap kali dipanggil.
+Lalu untuk fungsi execute, fungsi ini menerima parameter generik F dengan batasan ```where F: FnOnce() + Send + 'static``` yang artinya F harus berupa closure yang dapat dipanggil sekali (FnOnce), aman ketika dikirim antar thread (Send), dan memiliki lifetime static ('static). Saat ini, fungsi ini hanya memanggil std::thread::spawn(f) untuk membuat thread baru setiap kali dipanggil.
 
 Perubahan code pada src/main.rs
 
@@ -253,3 +253,45 @@ fn main() {
 ```
 
 Pada code di main.rs, web server membuat instance ThreadPool dengan parameter 4 yang mengindikasikan untuk membuat pool dengan 4 thread. Untuk setiap koneksi masuk, server memanggil pool.execute() dengan closure yang memanggil handle_connection(stream). Ini menunjukkan bahwa server sekarang menggunakan thread terpisah untuk menangani setiap koneksi sehingga memungkinkan penanganan beberapa koneksi secara bersamaan.
+
+## Commit Bonus Reflection
+
+Perubahan code pada src/lib.rs.
+
+```
+pub struct ThreadPool;
+
+#[derive(Debug)]
+pub struct PoolCreationError;
+
+impl ThreadPool {
+    pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
+        if size == 0 {
+            return Err(PoolCreationError);
+        }
+        Ok(ThreadPool {})
+    }
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        std::thread::spawn(f);
+    }
+}
+```
+
+Perubahan line code pada src/main.rs
+
+```
+fn main() {
+    ...
+    let pool = ThreadPool::build(4).unwrap();
+    ...
+}
+```
+
+Pada implementasi awal, ThreadPool::new melakukan assertion untuk memastikan ukuran pool lebih besar dari nol. Jika kondisi ini gagal, maka program akan panic. Pendekatan ini memaksa program untuk crash ketika ukuran yang tidak valid diberikan.
+
+Lalu pada fungsi build yang baru diimplementasikan, alih-alih melakukan assertion dan berpotensi panic, fungsi ini mengembalikan Result<ThreadPool, PoolCreationError> yang memungkinkan pemanggil untuk menangani kasus ketika ukuran yang tidak valid diberikan dengan lebih baik.
+
+Perubahan lainnya adalah custom tipe error PoolCreationError yang mengimplementasikan trait Debug. Ini memberikan informasi kesalahan yang lebih spesifik daripada sekadar pesan panic generik. Jika ukuran pool adalah nol, fungsi mengembalikan Err(PoolCreationError).
