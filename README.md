@@ -100,3 +100,69 @@ warning: `hello` (bin "hello") generated 1 warning
 
 Pada output yang ditampilkan, muncul suatu peringatan. Peringatan ini muncul saat kompilasi ("unused variable: http_request") yang menunjukkan bahwa variabel http_request tidak digunakan dalam code. Ini adalah peringatan umum dari Rust yang mengingatkan bahwa ada variabel yang tidak digunakan sehingga bisa menjadi indikasi potensi masalah atau code yang tidak efisien. Compiler menyarankan untuk menambahkan underscore di depan nama variabel (_http_request) jika memang variabel tersebut sengaja tidak digunakan yang setidaknya akan menekan peringatan yang tampil pada console.
 
+## Commit 3 Reflection
+
+Terdapat perubahan code pada fungsi handle_connection.
+
+![image](https://github.com/user-attachments/assets/7e508c80-7496-4b1a-91a3-d73db35e8497)
+
+```
+fn handle_connection(mut stream: TcpStream) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+    if request_line == "GET / HTTP/1.1" {
+        let status_line = "HTTP/1.1 200 OK";
+        let contents = fs::read_to_string("hello.html").unwrap();
+        let length = contents.len();
+
+        let response = format!(
+            "{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}"
+        );
+
+        stream.write_all(response.as_bytes()).unwrap();
+    } else {
+        let status_line = "HTTP/1.1 404 NOT FOUND";
+        let contents = fs::read_to_string("404.html").unwrap();
+        let length = contents.len();
+
+        let response = format!(
+            "{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}"
+        );
+
+        stream.write_all(response.as_bytes()).unwrap();
+    }
+}
+```
+
+Pada perubahan code tersebut, server kini membedakan antara request yang valid (GET pada path root "/") dan request yang tidak valid. Fungsi ini sekarang hanya membaca baris pertama dari HTTP request menggunakan ```buf_reader.lines().next().unwrap().unwrap()``` yang mengambil hanya satu baris pertama dari request - yaitu baris yang berisi metode HTTP, path, dan versi protokol.
+
+Server kemudian mengevaluasi baris request tersebut. Jika baris request adalah "GET / HTTP/1.1" yang menandakan request GET ke halaman utama, server merespons dengan status 200 OK dan mengirimkan konten dari file hello.html. Namun, jika baris request berbeda dari pola tersebut (misalnya, mencoba mengakses halaman yang tidak ada), server merespons dengan status 404 NOT FOUND dan mengirimkan konten dari file 404.html.
+
+Berikut perubahan code setelah refactoring.
+
+```
+fn handle_connection(mut stream: TcpStream) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+    let (status_line, filename) = if request_line == "GET / HTTP/1.1" {
+        ("HTTP/1.1 200 OK", "hello.html")
+    } else {
+        ("HTTP/1.1 404 NOT FOUND", "404.html")
+    };
+
+    let contents = fs::read_to_string(filename).unwrap();
+    let length = contents.len();
+
+    let response =
+        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    stream.write_all(response.as_bytes()).unwrap();
+}
+```
+
+Setelah adanya refactoring, terjadi pengurangan duplikasi dan peningkatan keterbacaan pada code. Sebelumnya, code memiliki dua blok yang hampir identik untuk menangani kasus 200 OK dan 404 NOT FOUND. Refactoring menggunakan tuple assignment untuk menentukan nilai status_line dan filename berdasarkan kondisi request. Kemudian, logika untuk membaca file, menghitung panjang konten, memformat respons, dan menuliskannya ke stream hanya perlu muncul sekali pada code.
+
+Kenapa refactoring diperlukan? Pertama, refactoring mengurangi duplikasi code yang merupakan prinsip dasar dalam pengembangan perangkat lunak yang baik. Code yang terduplikasi sulit untuk dipelihara karena perubahan harus dilakukan di beberapa tempat sehingga meningkatkan risiko kesalahan. Kedua, code yang di-refactor lebih mudah dibaca dan dipahami karena memisahkan dengan jelas bagian penentuan kondisi (if-else) dari bagian pelaksanaan respons. Ketiga, hal ini membuat code lebih modular sehingga jika ingin menambahkan lebih banyak rute atau jenis respons, struktur code yang di-refactor akan lebih mudah disesuaikan.
+
